@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Player</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Music Player</h1>
+
+    <section class="player">
+      <div id="player"></div>
+      <div class="now">
+        <div id="now-title">曲を追加して再生してください</div>
+        <div id="now-status"></div>
+      </div>
+      <div class="controls">
+        <button id="btn-prev" title="前の曲">⏮</button>
+        <button id="btn-play" title="再生/一時停止">▶</button>
+        <button id="btn-next" title="次の曲">⏭</button>
+        <button id="btn-shuffle" class="toggle" title="ランダム再生">🔀 ランダム</button>
+        <button id="btn-repeat" class="toggle" title="リピート">🔁 リピート</button>
+      </div>
+    </section>
+
+    <section class="add">
+      <form id="add-form">
+        <input id="add-input" type="text"
+               placeholder="YouTube Music / YouTube のURL(曲・プレイリスト)を貼り付け" required>
+        <button type="submit">追加</button>
+      </form>
+      <p class="hint">例: https://music.youtube.com/watch?v=xxxxxxxxxxx ／ https://music.youtube.com/playlist?list=PLxxxx<br>
+        複数行にまとめて貼り付けることもできます。</p>
+    </section>
+
+    <section class="list">
+      <div class="list-head">
+        <h2>プレイリスト <span id="count"></span></h2>
+        <button id="btn-clear" class="ghost">全削除</button>
+      </div>
+      <ol id="playlist"></ol>
+    </section>
+  </main>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js"></script>
+</body>
+</html>

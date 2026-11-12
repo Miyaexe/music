@@ -1,15 +1,24 @@
 // YouTube Music の曲を YouTube IFrame Player API で再生するプレイヤー。
 // 音声データを抽出・保存せず、公式の埋め込みプレイヤー経由で再生する。
+//
+// 2つの再生モード:
+//  - ランダム探索: /api/random でYouTube上の音楽をジャンル別にランダム検索して再生
+//  - プレイリスト: 自分で追加した曲を順番 or シャッフルで再生
 
-const STORE_KEY = "music-player-v1";
+const STORE_KEY = "music-player-v2";
 
 const state = {
-  tracks: [],      // { id, title, author }
-  index: -1,       // 現在の曲(tracks のインデックス)
-  shuffle: false,
+  tracks: [],        // プレイリスト { id, title, author }
+  current: null,     // 再生中の曲 { id, title, author, genre? }
+  discover: false,   // ランダム探索モード
+  genre: "",         // 探索するジャンルID(空=すべて)
+  shuffle: false,    // プレイリストのシャッフル
   repeat: false,
-  history: [],     // ランダム再生時の「前の曲」用
-  queue: [],       // ランダム再生の未再生キュー(重複なしで一巡)
+  history: [],       // 「前の曲」用
+  queue: [],         // プレイリストのシャッフル用(曲ID)
+  buffer: [],        // 探索で取得済みの未再生の曲
+  played: new Set(), // 探索で再生済みの曲ID(重複防止)
+  loading: false,
 };
 
 let player = null;
@@ -22,6 +31,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       tracks: state.tracks, shuffle: state.shuffle, repeat: state.repeat,
+      genre: state.genre,
     }));
   } catch (e) { /* 保存できなくても動作は継続 */ }
 }
@@ -31,6 +41,7 @@ function load() {
     state.tracks = Array.isArray(d.tracks) ? d.tracks : [];
     state.shuffle = !!d.shuffle;
     state.repeat = !!d.repeat;
+    state.genre = typeof d.genre === "string" ? d.genre : "";
   } catch (e) { /* 無視 */ }
 }
 
@@ -40,7 +51,7 @@ function parseInput(text) {
   for (const raw of text.split(/\s+/).filter(Boolean)) {
     let url;
     try { url = new URL(raw); } catch (e) {
-      if (/^[\w-]{11}$/.test(raw)) out.videos.push(raw); // 動画IDだけの場合
+      if (/^[\w-]{11}$/.test(raw)) out.videos.push(raw);
       continue;
     }
     const v = url.searchParams.get("v");
@@ -57,7 +68,6 @@ function parseInput(text) {
   return out;
 }
 
-// 曲名・アーティスト名は公式の oEmbed から取得する(失敗してもIDだけで動く)
 async function fetchMeta(id) {
   try {
     const u = "https://www.youtube.com/oembed?format=json&url=" +
@@ -78,11 +88,9 @@ async function addVideo(id) {
   return true;
 }
 
-// プレイリストはプレイヤー自身に読み込ませ、動画IDの一覧を取得する
 function addPlaylist(listId) {
   return new Promise((resolve) => {
     if (!playerReady) return resolve(0);
-    const onState = () => {};
     player.cuePlaylist({ listType: "playlist", list: listId });
     let tries = 0;
     const timer = setInterval(async () => {
@@ -101,7 +109,7 @@ function addPlaylist(listId) {
   });
 }
 
-// ---------- 再生制御 ----------
+// ---------- ランダム探索 ----------
 function shuffleArray(a) {
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -110,68 +118,97 @@ function shuffleArray(a) {
   return a;
 }
 
-// 一巡するまで同じ曲が出ないランダム再生
-function refillQueue(exclude) {
-  state.queue = shuffleArray(
-    state.tracks.map((_, i) => i).filter((i) => i !== exclude)
+async function refillBuffer() {
+  const qs = state.genre ? "?genre=" + encodeURIComponent(state.genre) : "";
+  const genreAtRequest = state.genre;
+  const r = await fetch("/api/random" + qs);
+  let j = {};
+  try { j = await r.json(); } catch (e) { /* 下で処理 */ }
+  if (!r.ok) throw new Error(j.error || "曲の取得に失敗しました (" + r.status + ")");
+  // 取得中にジャンルが変わっていたら破棄
+  if (genreAtRequest !== state.genre) return;
+  const fresh = (j.tracks || []).filter(
+    (t) => !state.played.has(t.id) && !state.buffer.some((b) => b.id === t.id)
   );
+  state.buffer.push(...fresh);
 }
 
-function playIndex(i, pushHistory = true) {
-  if (i < 0 || i >= state.tracks.length || !playerReady) return;
-  if (pushHistory && state.index >= 0) state.history.push(state.index);
-  state.index = i;
-  player.loadVideoById(state.tracks[i].id);
+async function nextDiscover() {
+  if (state.loading) return;
+  state.loading = true;
+  try {
+    for (let i = 0; i < 3 && !state.buffer.length; i++) {
+      setStatus("曲を探しています…");
+      await refillBuffer();
+    }
+    const t = state.buffer.shift();
+    if (!t) { setStatus("条件に合う曲が見つかりませんでした。もう一度お試しください"); return; }
+    state.played.add(t.id);
+    playTrack(t);
+    // 残りが少なくなったら先読み
+    if (state.buffer.length < 5) refillBuffer().catch(() => {});
+  } catch (e) {
+    setStatus(e.message);
+  } finally {
+    state.loading = false;
+  }
+}
+
+// ---------- 再生制御 ----------
+function playTrack(t, pushHistory = true) {
+  if (!playerReady) return;
+  if (pushHistory && state.current) state.history.push(state.current);
+  if (state.history.length > 100) state.history.shift();
+  state.current = t;
+  player.loadVideoById(t.id);
   render();
 }
 
-function next() {
+function refillQueue(excludeId) {
+  state.queue = shuffleArray(
+    state.tracks.map((t) => t.id).filter((id) => id !== excludeId)
+  );
+}
+
+function nextFromList() {
   const n = state.tracks.length;
-  if (!n) return;
+  if (!n) { setStatus("プレイリストに曲がありません"); return; }
+  const curId = state.current && state.current.id;
   if (state.shuffle) {
+    state.queue = state.queue.filter((id) => state.tracks.some((t) => t.id === id));
     if (!state.queue.length) {
-      if (n === 1 && !state.repeat) return;
-      refillQueue(state.index);
+      if (n === 1 && !state.repeat && curId) return;
+      refillQueue(curId);
     }
-    const i = state.queue.shift();
-    if (i === undefined) return playIndex(state.index);
-    playIndex(i);
+    const id = state.queue.shift();
+    const t = state.tracks.find((x) => x.id === id) || state.tracks[0];
+    playTrack(t);
   } else {
-    let i = state.index + 1;
+    let i = state.tracks.findIndex((t) => t.id === curId) + 1; // 見つからなければ先頭
     if (i >= n) {
       if (!state.repeat) return;
       i = 0;
     }
-    playIndex(i);
+    playTrack(state.tracks[i]);
   }
 }
 
+function next() {
+  if (state.discover) nextDiscover();
+  else nextFromList();
+}
+
 function prev() {
-  if (!state.tracks.length) return;
-  // 3秒以上再生していたら曲の頭に戻す
   if (playerReady && player.getCurrentTime && player.getCurrentTime() > 3) {
     player.seekTo(0, true);
     return;
   }
-  if (state.history.length) {
-    playIndex(state.history.pop(), false);
-  } else if (!state.shuffle) {
-    playIndex(Math.max(0, state.index - 1), false);
-  }
+  if (state.history.length) playTrack(state.history.pop(), false);
 }
 
 function togglePlay() {
   if (!playerReady) return;
-  if (state.index < 0) {
-    if (!state.tracks.length) return;
-    if (state.shuffle) {
-      refillQueue(-1);
-      playIndex(state.queue.shift());
-    } else {
-      playIndex(0);
-    }
-    return;
-  }
+  if (!state.current) { next(); return; }
   const s = player.getPlayerState();
   if (s === YT.PlayerState.PLAYING) player.pauseVideo();
   else player.playVideo();
@@ -187,12 +224,11 @@ window.onYouTubeIframeAPIReady = () => {
         const S = YT.PlayerState;
         if (e.data === S.ENDED) next();
         $("btn-play").textContent = e.data === S.PLAYING ? "⏸" : "▶";
-        if (e.data === S.PLAYING) setStatus("再生中");
+        if (e.data === S.PLAYING) setStatus(state.discover ? "ランダム再生中" : "再生中");
         else if (e.data === S.PAUSED) setStatus("一時停止");
         else if (e.data === S.BUFFERING) setStatus("読み込み中…");
       },
       onError: () => {
-        // 埋め込み不可・削除済みの曲は自動でスキップ
         setStatus("この曲は再生できないためスキップします");
         setTimeout(next, 800);
       },
@@ -204,52 +240,91 @@ window.onYouTubeIframeAPIReady = () => {
 function setStatus(t) { $("now-status").textContent = t; }
 
 function render() {
-  const cur = state.tracks[state.index];
+  const cur = state.current;
   $("now-title").textContent = cur
-    ? cur.title + (cur.author ? " — " + cur.author : "")
-    : "曲を追加して再生してください";
+    ? cur.title + (cur.author ? " — " + cur.author : "") + (cur.genre ? "  [" + cur.genre + "]" : "")
+    : "🎲 ランダム探索を押すと、曲を探して再生します";
   $("count").textContent = state.tracks.length ? `(${state.tracks.length}曲)` : "";
+  $("btn-discover").classList.toggle("on", state.discover);
   $("btn-shuffle").classList.toggle("on", state.shuffle);
   $("btn-repeat").classList.toggle("on", state.repeat);
+
+  const saved = cur && state.tracks.some((t) => t.id === cur.id);
+  $("btn-save").textContent = saved ? "♥ 追加済み" : "♡ 追加";
+  $("btn-save").disabled = !cur || saved;
 
   const ol = $("playlist");
   ol.innerHTML = "";
   if (!state.tracks.length) {
-    ol.innerHTML = '<div class="empty">まだ曲がありません</div>';
+    ol.innerHTML = '<div class="empty">まだ曲がありません(ランダム探索で見つけた曲は「♡ 追加」で保存できます)</div>';
     return;
   }
-  state.tracks.forEach((t, i) => {
+  state.tracks.forEach((t) => {
     const li = document.createElement("li");
-    if (i === state.index) li.className = "current";
+    if (cur && t.id === cur.id) li.className = "current";
     li.innerHTML =
       `<img loading="lazy" alt="" src="https://i.ytimg.com/vi/${t.id}/mqdefault.jpg">` +
       `<div class="meta"><div class="t"></div><div class="a"></div></div>` +
       `<button class="del" title="削除">✕</button>`;
     li.querySelector(".t").textContent = t.title;
     li.querySelector(".a").textContent = t.author;
-    li.addEventListener("click", () => playIndex(i));
+    li.addEventListener("click", () => playTrack(t));
     li.querySelector(".del").addEventListener("click", (e) => {
       e.stopPropagation();
-      removeTrack(i);
+      removeTrack(t.id);
     });
     ol.appendChild(li);
   });
 }
 
-function removeTrack(i) {
-  state.tracks.splice(i, 1);
-  if (i < state.index) state.index--;
-  else if (i === state.index) {
-    state.index = -1;
-    if (playerReady) player.stopVideo();
-  }
-  state.history = [];
+function removeTrack(id) {
+  state.tracks = state.tracks.filter((t) => t.id !== id);
   state.queue = [];
   save();
   render();
 }
 
+async function loadGenres() {
+  const sel = $("genre");
+  try {
+    const r = await fetch("/api/genres");
+    if (!r.ok) throw new Error(r.status);
+    const list = await r.json();
+    for (const g of list) {
+      const o = document.createElement("option");
+      o.value = g.id;
+      o.textContent = g.label;
+      sel.appendChild(o);
+    }
+  } catch (e) { /* API未接続でも「すべて」だけで動作 */ }
+  sel.value = state.genre;
+  if (sel.value !== state.genre) { state.genre = ""; sel.value = ""; }
+}
+
 // ---------- イベント ----------
+$("btn-discover").addEventListener("click", () => {
+  state.discover = !state.discover;
+  render();
+  if (state.discover) nextDiscover();
+});
+
+$("genre").addEventListener("change", (e) => {
+  state.genre = e.target.value;
+  state.buffer = [];
+  save();
+  // 探索中なら、選んだジャンルですぐ次の曲へ
+  if (state.discover) nextDiscover();
+});
+
+$("btn-save").addEventListener("click", () => {
+  const c = state.current;
+  if (!c || state.tracks.some((t) => t.id === c.id)) return;
+  state.tracks.push({ id: c.id, title: c.title, author: c.author });
+  state.queue = [];
+  save();
+  render();
+});
+
 $("add-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("add-input");
@@ -286,13 +361,11 @@ $("btn-repeat").addEventListener("click", () => {
 $("btn-clear").addEventListener("click", () => {
   if (!state.tracks.length || !confirm("プレイリストを全て削除しますか?")) return;
   state.tracks = [];
-  state.index = -1;
-  state.history = [];
   state.queue = [];
-  if (playerReady) player.stopVideo();
   save();
   render();
 });
 
 load();
 render();
+loadGenres();

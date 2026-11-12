@@ -13,15 +13,30 @@
     <section class="player">
       <div id="player"></div>
       <div class="now">
-        <div id="now-title">曲を追加して再生してください</div>
+        <div id="now-title">🎲 ランダム探索を押すと、曲を探して再生します</div>
         <div id="now-status"></div>
       </div>
+
       <div class="controls">
         <button id="btn-prev" title="前の曲">⏮</button>
         <button id="btn-play" title="再生/一時停止">▶</button>
         <button id="btn-next" title="次の曲">⏭</button>
-        <button id="btn-shuffle" class="toggle" title="ランダム再生">🔀 ランダム</button>
-        <button id="btn-repeat" class="toggle" title="リピート">🔁 リピート</button>
+        <button id="btn-save" title="今の曲をプレイリストに追加">♡ 追加</button>
+      </div>
+
+      <div class="discover">
+        <button id="btn-discover" class="toggle" title="YouTube Musicの曲をランダムに探して再生">🎲 ランダム探索</button>
+        <label class="genre">
+          ジャンル
+          <select id="genre">
+            <option value="">すべて</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="controls sub">
+        <button id="btn-shuffle" class="toggle" title="プレイリスト内をシャッフル">🔀 プレイリストをシャッフル</button>
+        <button id="btn-repeat" class="toggle" title="プレイリストをリピート">🔁 リピート</button>
       </div>
     </section>
 

@@ -1,0 +1,27 @@
+// YouTube Music の「ムード&ジャンル」に近いカテゴリ。
+// queries は YouTube を検索するときのキーワード(この中からランダムに選ぶ)。
+module.exports = [
+  { id: "jpop", label: "J-POP", queries: ["J-POP 人気曲", "邦楽 ヒット曲", "Japanese pop official", "J-POP 名曲"] },
+  { id: "jrock", label: "J-ROCK", queries: ["邦ロック", "J-ROCK 人気曲", "Japanese rock band official", "ジャパニーズロック 名曲"] },
+  { id: "anime", label: "アニメ", queries: ["アニソン", "アニメ主題歌", "anime opening full", "anime ending song"] },
+  { id: "vocaloid", label: "ボカロ", queries: ["ボカロ 名曲", "VOCALOID オリジナル曲", "初音ミク オリジナル", "ボカロ 人気曲"] },
+  { id: "citypop", label: "シティポップ", queries: ["シティポップ", "city pop 80s", "city pop Japanese classics"] },
+  { id: "pop", label: "ポップ", queries: ["pop music official video", "pop hits", "pop song official audio"] },
+  { id: "rock", label: "ロック", queries: ["rock music official video", "classic rock hits", "alternative rock official"] },
+  { id: "hiphop", label: "ヒップホップ/ラップ", queries: ["hip hop official video", "rap music official", "日本語ラップ"] },
+  { id: "rnb", label: "R&B/ソウル", queries: ["R&B official video", "soul music classics", "neo soul official audio"] },
+  { id: "edm", label: "ダンス/エレクトロニック", queries: ["EDM official", "house music official", "electronic dance music", "techno official audio"] },
+  { id: "jazz", label: "ジャズ", queries: ["jazz classics", "jazz standard", "modern jazz official"] },
+  { id: "classical", label: "クラシック", queries: ["classical music", "piano classical", "orchestra symphony"] },
+  { id: "kpop", label: "K-POP", queries: ["K-POP official MV", "K-POP 人気曲", "kpop music video"] },
+  { id: "metal", label: "メタル", queries: ["metal official video", "heavy metal", "メタル 邦楽"] },
+  { id: "indie", label: "インディー", queries: ["indie music official", "indie pop", "indie rock official video"] },
+  { id: "folk", label: "フォーク/アコースティック", queries: ["acoustic song official", "folk music", "弾き語り オリジナル"] },
+  { id: "country", label: "カントリー", queries: ["country music official video", "country hits"] },
+  { id: "latin", label: "ラテン", queries: ["latin music official video", "reggaeton official", "bossa nova"] },
+  { id: "reggae", label: "レゲエ", queries: ["reggae official", "reggae classics"] },
+  { id: "lofi", label: "ローファイ", queries: ["lofi hip hop", "lo-fi beats", "lofi chill"] },
+  { id: "game", label: "ゲーム音楽", queries: ["ゲーム音楽 サントラ", "video game music soundtrack", "game OST"] },
+  { id: "chill", label: "チル/リラックス", queries: ["chill music", "relaxing music", "リラックス BGM"] },
+  { id: "workout", label: "ワークアウト", queries: ["workout music", "gym motivation music", "running music"] },
+];
